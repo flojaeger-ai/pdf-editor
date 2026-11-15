@@ -3,7 +3,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
 const { PDFDocument, rgb, StandardFonts, degrees, LineCapStyle, BlendMode,
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } = window.PDFLib;
 
-const APP_VERSION = 6; /* Version 6 */
+const APP_VERSION = 7; /* Version 7 */
+const TEXT_PT = 11; // jede Eintragung: genau 11 pt (PDF-Einheiten), nur kleiner, wenn sie wirklich nicht in die Breite passt
 const $ = (s) => document.querySelector(s);
 const viewer = $("#viewer"), pagesEl = $("#pages");
 $("#ver").textContent = "v" + APP_VERSION;
@@ -92,7 +93,7 @@ async function idb(mode, key, val) {
 let saveT = null;
 function scheduleSave() {
   clearTimeout(saveT);
-  saveT = setTimeout(() => { if (pdfBytes) idb("put", "state", { v: 3, objects, formValues }); }, 400);
+  saveT = setTimeout(() => { if (pdfBytes) idb("put", "state", { v: 7, objects, formValues }); }, 400);
 }
 
 
@@ -124,7 +125,7 @@ async function openFile(f, handle) {
     fileHandle = handle || null;
     if (fileHandle) await idb("put", "handle", fileHandle); else await idb("del", "handle");
     await idb("put", "pdf", { name: fileName, bytes: buf });
-    await idb("put", "state", { v: 3, objects, formValues });
+    await idb("put", "state", { v: 7, objects, formValues });
     if (!localStorage.getItem("pdfeditor.hinted")) {
       setTimeout(() => toast("Tipp einfach auf eine Linie oder ein Feld und schreib los.", 4500), 600);
       try { localStorage.setItem("pdfeditor.hinted", "1"); } catch (e) {}
@@ -179,7 +180,7 @@ async function loadPdf(bytes, name, saved) {
   }
   if (saved) {
     objects = migrate(Array.isArray(saved.objects) ? saved.objects : []);
-    if (!saved.v || saved.v < 3) for (const o of objects) if (o.type === "text" && o.size > 11) o.size = 11; // v2 hat teils größer gesetzt
+    if (!saved.v || saved.v < 7) for (const o of objects) if (o.type === "text") o.size = TEXT_PT; // vor v7 teils kleiner/größer gesetzt
     if (saved.formValues) for (const k in saved.formValues) if (k in formValues) formValues[k] = saved.formValues[k];
   }
   hist = [JSON.stringify(objects)]; hIndex = 0; updateUndo();
@@ -284,6 +285,36 @@ function releasePage(p) {
   if (p.base) { p.base.width = 0; p.base = null; }
 }
 
+// Schriftgröße für Formularfeld-Werte (Anzeige und Export gleich): 11 pt; einzeilig nur kleiner, wenn es nicht in die Breite passt
+function fieldFontSize(v, w, multi) {
+  if (multi) return TEXT_PT;
+  const tw = TW(clean(v || "").replace(/\n/g, " "), TEXT_PT), aw = w - 4;
+  return tw > aw && tw > 0 ? Math.max(4, Math.floor(TEXT_PT * aw / tw * 4) / 4) : TEXT_PT;
+}
+// Unterschrift satt und deckend machen: dunkle Tinte -> reines Schwarz, Kantenglättung kräftiger (dünne Striche bleichen sonst aus)
+const sigCache = new Map();
+function solidSig(data) {
+  if (sigCache.has(data)) return sigCache.get(data);
+  const pr = new Promise((res) => {
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+      const x = c.getContext("2d"); x.drawImage(im, 0, 0);
+      const id = x.getImageData(0, 0, c.width, c.height), d = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const a = d[i + 3]; if (!a) continue;
+        if (0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2] < 100) { d[i] = 0; d[i + 1] = 0; d[i + 2] = 0; }
+        d[i + 3] = Math.min(255, Math.round(a * 1.6));
+      }
+      x.putImageData(id, 0, 0);
+      const r = { canvas: c, url: c.toDataURL("image/png") }; sigCache.set(data, r); res(r);
+    };
+    im.onerror = () => res(null);
+    im.src = data;
+  });
+  sigCache.set(data, pr);
+  return pr;
+}
 /* ---------- Einträge ins Seitenbild zeichnen (gegen Dunkelmodus-Umfärben) ---------- */
 const FONT_STACK = 'Helvetica, Arial, "Liberation Sans", Arimo, Roboto, sans-serif';
 const dirty = new Set(); let composeRaf = 0;
@@ -332,11 +363,11 @@ function compose(p) {
       if (kind === "choice") { const o = (f.opts || []).find((x) => x.exportValue === v); if (o) v = o.displayValue || o.exportValue; }
       if (f.pw) v = "•".repeat(v.length);
       if (!v) continue;
-      const fs = f.fs, pad = 2 / scale();
+      const pad = 2, fs = fieldFontSize(v, r.w, f.multi);
       ctx.save(); ctx.beginPath(); ctx.rect(r.l, r.t, r.w, r.h); ctx.clip();
       if (f.multi) {
         const lines = wrapText(clean(v), fs, r.w - 2 * pad), lh = fs * 1.15;
-        lines.forEach((t, i) => drawLine(ctx, t, r.l + pad, r.t + 1 / scale() + fs * 0.92 + i * lh, fs, INK));
+        lines.forEach((t, i) => drawLine(ctx, t, r.l + pad, r.t + 2 + fs * 0.92 + i * lh, fs, INK));
       } else {
         const t = clean(v).replace(/\n/g, " "), w = TW(t, fs);
         const x = f.align === 1 ? r.l + (r.w - w) / 2 : f.align === 2 ? r.l + r.w - pad - w : r.l + pad;
@@ -358,6 +389,13 @@ function compose(p) {
     if (o.mark === "v") { ctx.moveTo(bx.l + 18 * sx, bx.t + 52 * sy); ctx.lineTo(bx.l + 42 * sx, bx.t + 76 * sy); ctx.lineTo(bx.l + 84 * sx, bx.t + 22 * sy); }
     else { ctx.moveTo(bx.l + 20 * sx, bx.t + 20 * sy); ctx.lineTo(bx.l + 80 * sx, bx.t + 80 * sy); ctx.moveTo(bx.l + 80 * sx, bx.t + 20 * sy); ctx.lineTo(bx.l + 20 * sx, bx.t + 80 * sy); }
     ctx.stroke();
+  }
+  // Unterschriften (ins Seitenbild, damit Dunkelmodus/Bilddimmung sie nicht blasser macht)
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  for (const o of objects) if (o.type === "sig" && o.page === p.num) {
+    const sg = sigCache.get(o.data);
+    if (sg && sg.canvas) ctx.drawImage(sg.canvas, o.x, o.y, o.w, o.h);
+    else if (!sg) solidSig(o.data).then(() => composeSoon(p));
   }
   // Text (auch der gerade bearbeitete)
   for (const o of objects) if (o.type === "text" && o.page === p.num && o.text) {
@@ -472,12 +510,7 @@ function buildForms(p) {
       if (!a.multiLine) el.type = a.password ? "password" : "text";
       el.value = formValues[n] || "";
       if (a.maxLen) el.maxLength = a.maxLen;
-      let fs = (a.defaultAppearanceData && a.defaultAppearanceData.fontSize) || 0;
-      const fsOrig = fs;
-      if (!fs) fs = a.multiLine ? 10 : Math.min(r.h * 0.65, 13);
-      fs = a.multiLine ? Math.min(fs, 12) : Math.min(fs, r.h * 0.7, 16);
-      // Export soll aussehen wie in der App: wenn wir die Größe begrenzt haben, merken
-      if (!fsOrig || fs < fsOrig - 0.5) fieldFs[n] = fs;
+      const fs = TEXT_PT; // auch bei Feldern mit eigener oder automatischer (0) Größe
       el.style.fontSize = `calc(var(--s) * ${fs}px)`;
       el.style.textAlign = ["left", "center", "right"][a.textAlignment || 0] || "left";
       el.autocomplete = "off"; el.spellcheck = false;
@@ -508,7 +541,7 @@ function buildForms(p) {
     } else continue;
     el.classList.add("ff"); el.dataset.name = n; el.dataset.kind = k;
     if (k !== "sig") p.fieldDraw.push({ el, r, n, k, ro: !!a.readOnly, multi: !!a.multiLine, pw: !!a.password, opts: a.options || [],
-      align: a.textAlignment || 0, fs: k === "text" ? parseFloat(el.style.fontSize.match(/\*\s*([\d.]+)px/)[1]) : Math.min(r.h * 0.65, 13) });
+      align: a.textAlignment || 0, fs: TEXT_PT });
     if (a.readOnly) el.disabled = true;
     placePct(el, p, r.l, r.t, r.w, r.h);
     p.forms.appendChild(el);
@@ -748,7 +781,7 @@ async function detectPage(p) {
       else continue;
     }
     const f = flags(label);
-    const size = clamp(box.h * 0.6, 6, 11); // einheitlich 11 pt, nur bei engen Zellen kleiner
+    const size = TEXT_PT; // einheitlich 11 pt, auch in niedrigen Zellen
     push({ kind: "cell", box, size, label: label.trim(), ...f });
   }
 
@@ -783,7 +816,7 @@ async function detectPage(p) {
     const h = clamp(gapUp, 9, 24);
     const label = [left && left.str, below && below.str].filter(Boolean).join(" ");
     const lsize = left ? left.size : (ln.size || 0);
-    const size = Math.min(11, Math.max(7, h * 0.8)); // einheitlich 11 pt, auch auf breiten Linien
+    const size = TEXT_PT; // einheitlich 11 pt, auch auf breiten/engen Linien
     push({ kind: "line", box: { l: ln.x1 + 1.5, t: ln.y - h, w: len - 3, h }, lineY: ln.y, size, label, ...flags(label) });
   }
 
@@ -950,9 +983,10 @@ function layoutText(o) {
   if (o.mode === "cell") {
     const b = o.box, inset = Math.min(2.5, b.w * 0.06), aw = b.w - 2 * inset, ah = b.h - 2;
     let size = o.size, lines = [txt];
-    for (; size >= 4; size -= 0.5) {
+    for (; size >= 4; size -= 0.25) {
       lines = wrapText(txt, size, aw);
-      if (lines.length * size * 1.15 <= ah && lines.every((l) => TW(l, size) <= aw + 0.5)) break;
+      const maxLines = Math.max(1, Math.floor(ah / (size * 1.15) + 0.05)); // eine Zeile passt immer, auch in niedrigen Kästen
+      if (lines.length <= maxLines && lines.every((l) => TW(l, size) <= aw + 0.5)) break;
     }
     size = Math.max(4, size);
     const lh = size * 1.15;
@@ -1099,7 +1133,7 @@ function attachTap(p) {
     closePop();
     const t = p.detected ? hitTarget(p, x, y) : null;
     if (t) { activateTarget(p, t); return; }
-    const fs = settings.text.size || 11;
+    const fs = TEXT_PT;
     const o = { id: uid(), type: "text", page: p.num, mode: "free", x, base: y + fs * 0.35, size: fs, color: settings.text.color, text: "" };
     objects.push(o);
     const el = makeTextEl(o, p); p.objs.appendChild(el);
@@ -1122,7 +1156,7 @@ function activateTarget(p, t) {
   if (t.sig) { openSigChooser({ page: p.num, box: sigBoxFor(t), align: "left", targetId: t.id }); return; }
   let o = objects.find((x) => x.type === "text" && x.targetId === t.id);
   if (!o) {
-    o = { id: uid(), type: "text", page: p.num, mode: t.kind, targetId: t.id, box: { ...t.box }, lineY: t.lineY, size: t.size || settings.text.size, color: settings.text.color, text: "" };
+    o = { id: uid(), type: "text", page: p.num, mode: t.kind, targetId: t.id, box: { ...t.box }, lineY: t.lineY, size: TEXT_PT, color: settings.text.color, text: "" };
     objects.push(o);
     p.objs.appendChild(makeTextEl(o, p));
   }
@@ -1267,7 +1301,7 @@ function makeSigEl(o, p) {
   rs.addEventListener("pointerdown", (e) => startDrag(e, o, p, el, "resize"));
   return el;
 }
-function posSig(el, o) { el.style.left = pt(o.x); el.style.top = pt(o.y); el.style.width = pt(o.w); el.style.height = pt(o.h); }
+function posSig(el, o) { el.style.left = pt(o.x); el.style.top = pt(o.y); el.style.width = pt(o.w); el.style.height = pt(o.h); const pg = pages[o.page - 1]; if (pg) composeSoon(pg); }
 function handle(cls, txt) { const b = document.createElement("button"); b.className = "h " + cls; b.textContent = txt; b.tabIndex = -1; return b; }
 function startDrag(e, o, p, el, mode) {
   e.preventDefault(); e.stopPropagation();
@@ -1401,11 +1435,13 @@ function refreshPop() {
       settings.text.color = c; saveSettings();
       if (o) { o.color = c; editing.ta.style.color = c; editing.ta.style.webkitTextFillColor = c; }
     }).style.background = c;
-    const r2 = row(o ? "Größe dieses Texts" : "Schriftgröße (frei platzierter Text)");
-    const cur = o ? o.size : settings.text.size;
-    btn(r2, "pill", "A−", false, () => { const v = Math.max(5, cur - 1); if (o) { o.size = v; editing.place(); } else settings.text.size = v; saveSettings(); });
-    const l = document.createElement("span"); l.className = "pnote"; l.textContent = (Math.round(cur * 10) / 10) + " pt"; r2.appendChild(l);
-    btn(r2, "pill", "A+", false, () => { const v = Math.min(48, cur + 1); if (o) { o.size = v; editing.place(); } else settings.text.size = v; saveSettings(); });
+    if (o) { // Standard ist immer 11 pt; nur der gerade bearbeitete Text kann bewusst größer/kleiner werden
+      const r2 = row("Größe dieses Texts");
+      const cur = o.size;
+      btn(r2, "pill", "A−", false, () => { o.size = Math.max(5, cur - 1); editing.place(); composeSoon(editing.p); refreshPop(); });
+      const l = document.createElement("span"); l.className = "pnote"; l.textContent = (Math.round(cur * 10) / 10) + " pt"; r2.appendChild(l);
+      btn(r2, "pill", "A+", false, () => { o.size = Math.min(48, cur + 1); editing.place(); composeSoon(editing.p); refreshPop(); });
+    }
     const r3 = row("Kästchen ankreuzen mit");
     btn(r3, "pill", "✗", settings.check === "x", () => { settings.check = "x"; saveSettings(); });
     btn(r3, "pill", "✓", settings.check === "v", () => { settings.check = "v"; saveSettings(); });
@@ -1449,7 +1485,7 @@ function openSigChooser(target) {
   list.appendChild(nw);
   openDlg("#dlgChoose");
 }
-const pad = $("#pad"); let padStrokes = [], padCur = null, padColor = "#111827";
+const pad = $("#pad"); let padStrokes = [], padCur = null, padColor = "#000000";
 const PAD_WIDTHS = [2.4, 3.8, 5.4, 7.5]; // mittel ≈ 1,45 × der bisherigen Stärke (2,6)
 let padWidth = parseFloat(localStorage.getItem("pdfeditor.sigWidth")) || 3.8;
 if (!PAD_WIDTHS.includes(padWidth)) padWidth = 3.8;
@@ -1503,7 +1539,7 @@ $("#padSave").onclick = () => {
   if (!padStrokes.length) { toast("Bitte zuerst unterschreiben"); return; }
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of padStrokes) for (const [x, y] of s) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-  const k = 3, m = 4 + padWidth / 2;
+  const k = 5, m = 4 + padWidth / 2; // hohe Auflösung, damit dünne Striche beim Verkleinern nicht ausbleichen
   const c = document.createElement("canvas");
   c.width = Math.ceil((x1 - x0 + 2 * m) * k); c.height = Math.ceil((y1 - y0 + 2 * m) * k);
   const ctx = c.getContext("2d"); ctx.setTransform(k, 0, 0, k, (m - x0) * k, (m - y0) * k);
@@ -1553,14 +1589,16 @@ async function buildExport() {
   try { form = out.getForm(); } catch (e) { console.warn(e); }
   if (form) for (const n of Object.keys(formValues)) {
     const v = formValues[n];
-    if (v === formInitial[n]) continue;
     let f; try { f = form.getField(n); } catch (e) { continue; }
+    // unveränderte Felder auslassen – außer vorausgefüllten Textfeldern: die sollen wie in der App in 11 pt erscheinen
+    if (v === formInitial[n] && !(f instanceof PDFTextField && v)) continue;
     try {
       if (f instanceof PDFTextField) {
         // Auto-Schriftgröße (0 Tf) bei mehrzeiligen Feldern wird in pdf-lib riesig – Größe wie in der App setzen
         try {
-          if (fieldFs[n] && (f.isMultiline() || fieldFs[n] < 30)) {
-            const size = Math.max(4, Math.round(fieldFs[n]));
+          {
+            const ws0 = f.acroField.getWidgets(), wd = ws0.length ? ws0[0].getRectangle().width : 1e4;
+            const size = fieldFontSize(v, wd, f.isMultiline());
             f.setFontSize(size);
             for (const w of f.acroField.getWidgets()) { const da = w.getDefaultAppearance(); if (da) w.setDefaultAppearance(da.replace(/([\d.]+)\s+Tf/, size + " Tf")); }
           }
@@ -1621,7 +1659,7 @@ async function buildExport() {
       for (const [a, c] of segs) pg.drawLine({ start: a, end: c, thickness: lw, color, lineCap: LineCapStyle.Round });
     } else if (o.type === "sig") {
       let img = imgs.get(o.data);
-      if (!img) { img = await out.embedPng(o.data); imgs.set(o.data, img); }
+      if (!img) { const sg = await solidSig(o.data); img = await out.embedPng(sg ? sg.url : o.data); imgs.set(o.data, img); }
       const [x, y] = conv(o.x, o.y + o.h);
       pg.drawImage(img, { x, y, width: o.w, height: o.h, rotate: degrees(ang(o.x, o.y + o.h)) });
     }
@@ -1710,7 +1748,7 @@ setTool("write");
     finally { busy(false); }
   }
 })();
-window.__pdfEditor = { get objects() { return objects; }, get formValues() { return formValues; }, get pages() { return pages; }, buildExport, setTool, loadPdf, layoutText, get fileHandle() { return fileHandle; }, outName };
+window.__pdfEditor = { get objects() { return objects; }, get formValues() { return formValues; }, get pages() { return pages; }, buildExport, setTool, loadPdf, layoutText, get fileHandle() { return fileHandle; }, outName, setZoom, get baseScale() { return baseScale; } };
 
 /* ---------- service worker (network-first, auto update) ---------- */
 function setupServiceWorker() {
@@ -1737,7 +1775,7 @@ function setupServiceWorker() {
     if (!hadController) { hadController = true; return; } // erste Installation: kein Reload nötig
     // Bearbeitung vor dem Neuladen in IndexedDB sichern
     clearTimeout(saveT);
-    if (pdfBytes) idb("put", "state", { v: 3, objects, formValues }).then(refreshOnce); else refreshOnce();
+    if (pdfBytes) idb("put", "state", { v: 7, objects, formValues }).then(refreshOnce); else refreshOnce();
   });
   const checkUpdate = (reg) => { if (reg && reg.update) reg.update().catch(() => {}); };
   navigator.serviceWorker.register("./sw.js", { scope: "./" }).then((reg) => {
