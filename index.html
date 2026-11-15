@@ -31,7 +31,8 @@
       --sar: env(safe-area-inset-right, 0px);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { margin: 0; height: 100%; background: #fff; color: var(--ink); color-scheme: only light; forced-color-adjust: none; }
+    html, body { margin: 0; height: 100%; background: #fff !important; color: var(--ink); color-scheme: only light; forced-color-adjust: none; }
+    *, *::before, *::after { color-scheme: only light; }
     body {
       font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden;
@@ -92,6 +93,10 @@
     .page svg.ink { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
     .page svg.ink path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .page svg.ink path.mk { mix-blend-mode: multiply; }
+    /* V6: Alles Eingetragene wird ins Seitenbild (Canvas) gezeichnet, damit Dunkelmodi (Samsung Internet, Chrome) es nicht umfärben.
+       Die HTML-Elemente bleiben nur zum Antippen/Verschieben da und sind selbst unsichtbar. */
+    .page svg.ink path:not(.live) { visibility: hidden; }
+    .hints .hint, .hints .hint.line, .hints .hint.cell, .hints .hint.check { background: none !important; border: 0 !important; }
     .layer { position: absolute; inset: 0; pointer-events: none; }
     .hints { z-index: 0; }
     .objs { z-index: 2; }
@@ -107,26 +112,27 @@
     body.m-pen .draw { display: block; pointer-events: auto; cursor: crosshair; }
     body.m-write .forms > * { pointer-events: auto; }
     .txt { position: absolute; left: 0; top: 0; width: 0; height: 0; }
-    .txt .ln { position: absolute; white-space: pre; line-height: 1; color: #111; -webkit-text-fill-color: currentColor; opacity: 1; font-weight: 400; -webkit-font-smoothing: auto; text-shadow: none; font-family: Helvetica, Arial, "Liberation Sans", Arimo, sans-serif; touch-action: none; }
+    .txt .ln { position: absolute; white-space: pre; line-height: 1; color: transparent !important; -webkit-text-fill-color: transparent !important; opacity: 1; font-weight: 400; -webkit-font-smoothing: auto; text-shadow: none; font-family: Helvetica, Arial, "Liberation Sans", Arimo, sans-serif; touch-action: none; }
     body.m-write .txt .ln { pointer-events: auto; cursor: text; }
     .txt.lift .ln { background: rgba(37,99,235,.12); box-shadow: 0 2px 8px rgba(0,0,0,.18); border-radius: 2px; cursor: move; }
     .chk { position: absolute; pointer-events: none; }
     .chk svg { display: block; width: 100%; height: 100%; }
     textarea.editor {
       position: absolute; margin: 0; padding: 0 1px; border: 0; background: rgba(37,99,235,.06); resize: none; overflow: hidden;
-      font-family: Helvetica, Arial, "Liberation Sans", Arimo, sans-serif; outline: none; caret-color: #2563eb; border-radius: 2px;
-      box-shadow: 0 1.5px 0 rgba(37,99,235,.7); color: #111; -webkit-text-fill-color: currentColor; opacity: 1; -webkit-appearance: none; appearance: none; -webkit-user-select: text; user-select: text; pointer-events: auto; white-space: pre-wrap; z-index: 3;
+      font-family: Helvetica, Arial, "Liberation Sans", Arimo, sans-serif; outline: none; caret-color: #111; border-radius: 2px;
+      box-shadow: 0 1.5px 0 rgba(37,99,235,.7); color: transparent !important; -webkit-text-fill-color: transparent !important; opacity: 1; -webkit-appearance: none; appearance: none; -webkit-user-select: text; user-select: text; pointer-events: auto; white-space: pre-wrap; z-index: 3;
     }
     textarea.editor[wrap="off"] { white-space: pre; }
     .chips { position: absolute; display: flex; gap: 6px; z-index: 4; pointer-events: auto; white-space: nowrap; }
     .chips button { border: 0; background: #2563eb; color: #fff; font-weight: 600; font-size: 14px; padding: 7px 12px; border-radius: 99px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
-    .ff { position: absolute; border: 0; margin: 0; padding: 0 2px; background: rgba(40, 110, 255, .10); color: #111; -webkit-text-fill-color: #111; opacity: 1; -webkit-appearance: none; appearance: none;
+    .ff { position: absolute; border: 0; margin: 0; padding: 0 2px; background: transparent; color: transparent !important; -webkit-text-fill-color: transparent !important; caret-color: #111; opacity: 1; -webkit-appearance: none; appearance: none;
       font-family: Helvetica, Arial, sans-serif; outline: none; border-radius: 1px; -webkit-user-select: text; user-select: text; }
-    .ff:focus { background: rgba(40, 110, 255, .18); box-shadow: 0 0 0 1px rgba(40,110,255,.7); }
+    .ff:focus { background: transparent; box-shadow: 0 0 0 1px rgba(40,110,255,.7); }
     body.m-write .ff:not(:focus):not([disabled]) { box-shadow: inset 0 0 0 1px rgba(40,110,255,.28); }
     textarea.ff { resize: none; line-height: 1.15; padding-top: 1px; }
     select.ff { -webkit-appearance: none; appearance: none; padding-right: 2px; }
-    .ff[disabled] { background: transparent; color: #111; -webkit-text-fill-color: #111; opacity: 1; }
+    .ff[disabled] { background: transparent; opacity: 1; }
+    select.ff option { color: #111; -webkit-text-fill-color: #111; background: #fff; }
     .ff::placeholder, textarea.editor::placeholder { color: #9aa1ab; -webkit-text-fill-color: #9aa1ab; }
     .fchk { display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 700; padding: 0; }
     .fchk.radio { border-radius: 50%; }

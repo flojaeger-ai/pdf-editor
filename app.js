@@ -3,7 +3,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
 const { PDFDocument, rgb, StandardFonts, degrees, LineCapStyle, BlendMode,
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } = window.PDFLib;
 
-const APP_VERSION = 5; /* Version 5 */
+const APP_VERSION = 6; /* Version 6 */
 const $ = (s) => document.querySelector(s);
 const viewer = $("#viewer"), pagesEl = $("#pages");
 $("#ver").textContent = "v" + APP_VERSION;
@@ -99,18 +99,30 @@ function scheduleSave() {
 /* ---------- open / load ---------- */
 const fileInput = $("#fileinput");
 const isDirty = () => hist.length > 1 || Object.keys(formValues).some((k) => formValues[k] !== formInitial[k]);
-function pickFile() {
+// Datei-Zugriff (Mac/PC mit Chrome/Brave/Edge): Original direkt überschreiben
+let fileHandle = null;
+const canFSA = typeof window.showOpenFilePicker === "function";
+const PDF_TYPES = [{ description: "PDF-Dokument", accept: { "application/pdf": [".pdf"] } }];
+async function pickFile() {
   if (pdfBytes && isDirty() && !confirm("Aktuelle Bearbeitung verwerfen und eine andere PDF öffnen?\n(Vorher mit „Fertig“ sichern, wenn du sie behalten willst.)")) return;
+  if (canFSA && !isMobile) {
+    let h;
+    try { [h] = await window.showOpenFilePicker({ types: PDF_TYPES, multiple: false }); }
+    catch (e) { if (e && e.name === "AbortError") return; console.warn(e); fileInput.value = ""; fileInput.click(); return; }
+    if (h) await openFile(await h.getFile(), h);
+    return;
+  }
   fileInput.value = ""; fileInput.click();
 }
 $("#btnOpen").onclick = pickFile; $("#btnOpen2").onclick = pickFile;
-fileInput.onchange = async () => {
-  const f = fileInput.files && fileInput.files[0];
-  if (!f) return;
+fileInput.onchange = () => { const f = fileInput.files && fileInput.files[0]; if (f) openFile(f, null); };
+async function openFile(f, handle) {
   try {
     busy(true, "PDF wird geöffnet …");
     const buf = new Uint8Array(await f.arrayBuffer());
     await loadPdf(buf, f.name || "Dokument.pdf", null);
+    fileHandle = handle || null;
+    if (fileHandle) await idb("put", "handle", fileHandle); else await idb("del", "handle");
     await idb("put", "pdf", { name: fileName, bytes: buf });
     await idb("put", "state", { v: 3, objects, formValues });
     if (!localStorage.getItem("pdfeditor.hinted")) {
@@ -122,11 +134,11 @@ fileInput.onchange = async () => {
     if (e && e.name === "PasswordException") alert("Diese PDF ist passwortgeschützt und kann nicht bearbeitet werden.");
     else alert("Die Datei konnte nicht geöffnet werden.\n" + (e && e.message ? e.message : e));
   } finally { busy(false); }
-};
+}
 $("#btnClose").onclick = async () => {
   finishEdit();
   if (isDirty() && !confirm("Datei schließen? Nicht gesicherte Änderungen gehen verloren.")) return;
-  await idb("del", "pdf"); await idb("del", "state");
+  await idb("del", "pdf"); await idb("del", "state"); await idb("del", "handle"); fileHandle = null;
   resetDoc(); document.body.classList.remove("has-doc"); $("#title").textContent = "PDF bearbeiten";
   $("#btnClose").disabled = true;
 };
@@ -259,11 +271,100 @@ async function renderPage(p) {
   try { await task.promise; } catch (e) { if (e && e.name !== "RenderingCancelledException") console.warn(e); return; }
   if (p.task !== task) return;
   p.task = null;
-  p.canvas.replaceWith(c); p.canvas.width = 0; p.canvas = c; p.renderedScale = s;
+  // Sauberes PDF-Bild bleibt unsichtbar im Speicher; angezeigt wird eine Kopie, in die alle Einträge
+  // direkt hineingezeichnet werden (Dunkelmodus von Samsung Internet/Chrome färbt Bilder nicht um, HTML-Text aber schon).
+  const d = document.createElement("canvas"); d.className = "pdfc"; d.width = c.width; d.height = c.height;
+  if (p.base) p.base.width = 0;
+  p.base = c; p.canvas.replaceWith(d); p.canvas.width = 0; p.canvas = d; p.renderedScale = s;
+  compose(p);
 }
 function releasePage(p) {
   if (p.task) { try { p.task.cancel(); } catch (e) {} p.task = null; }
   p.canvas.width = 0; p.canvas.height = 0; p.renderedScale = 0;
+  if (p.base) { p.base.width = 0; p.base = null; }
+}
+
+/* ---------- Einträge ins Seitenbild zeichnen (gegen Dunkelmodus-Umfärben) ---------- */
+const FONT_STACK = 'Helvetica, Arial, "Liberation Sans", Arimo, Roboto, sans-serif';
+const dirty = new Set(); let composeRaf = 0;
+function composeSoon(p) {
+  if (p) dirty.add(p); else for (const q of visible) dirty.add(q);
+  if (!composeRaf) composeRaf = requestAnimationFrame(() => { composeRaf = 0; const l = [...dirty]; dirty.clear(); for (const q of l) compose(q); });
+}
+function drawLine(ctx, t, x, base, size, color) {
+  if (!t) return;
+  ctx.font = `${size}px ${FONT_STACK}`; ctx.fillStyle = color; ctx.textBaseline = "alphabetic";
+  const want = TW(t, size), have = ctx.measureText(t).width;
+  const k = have > 0 && want > 0 ? clamp(want / have, 0.75, 1.33) : 1; // gleiche Breite wie im Export
+  ctx.save(); ctx.translate(x, base); ctx.scale(k, 1); ctx.fillText(t, 0, 0); ctx.restore();
+}
+function compose(p) {
+  const c = p.canvas, b = p.base;
+  if (!b || !c || !c.width || c.width !== b.width) return;
+  const ctx = c.getContext("2d");
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(b, 0, 0);
+  const k = c.width / p.w; ctx.setTransform(k, 0, 0, k, 0, 0);
+  const write = tool === "write";
+  // Hinweise auf erkannte Stellen
+  if (write && p.hintRects) for (const h of p.hintRects) {
+    if (h.kind === "line") {
+      const g = ctx.createLinearGradient(0, h.t + h.h, 0, h.t); g.addColorStop(0, "rgba(37,99,235,.16)"); g.addColorStop(1, "rgba(37,99,235,0)");
+      ctx.fillStyle = g; ctx.fillRect(h.l, h.t, h.w, h.h);
+      ctx.fillStyle = "rgba(37,99,235,.35)"; ctx.fillRect(h.l, h.t + h.h - 0.9, h.w, 0.9);
+    } else { ctx.fillStyle = h.kind === "check" ? "rgba(37,99,235,.14)" : "rgba(37,99,235,.055)"; ctx.fillRect(h.l, h.t, h.w, h.h); }
+  }
+  // Freihand
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const o of objects) if (o.type === "stroke" && o.page === p.num && o.points.length) {
+    ctx.globalAlpha = o.kind === "marker" ? (o.opacity || 0.4) : 1;
+    ctx.globalCompositeOperation = o.kind === "marker" ? "multiply" : "source-over";
+    ctx.strokeStyle = o.color; ctx.lineWidth = o.width;
+    ctx.stroke(new Path2D(pathD(o.points)));
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  // AcroForm-Felder
+  for (const f of (p.fieldDraw || [])) {
+    const { r, n, k: kind, el } = f;
+    if (write && !f.ro) { ctx.fillStyle = "rgba(40,110,255,.10)"; ctx.fillRect(r.l, r.t, r.w, r.h); }
+    if (kind === "text" || kind === "choice") {
+      let v = formValues[n] || "";
+      if (kind === "choice") { const o = (f.opts || []).find((x) => x.exportValue === v); if (o) v = o.displayValue || o.exportValue; }
+      if (f.pw) v = "•".repeat(v.length);
+      if (!v) continue;
+      const fs = f.fs, pad = 2 / scale();
+      ctx.save(); ctx.beginPath(); ctx.rect(r.l, r.t, r.w, r.h); ctx.clip();
+      if (f.multi) {
+        const lines = wrapText(clean(v), fs, r.w - 2 * pad), lh = fs * 1.15;
+        lines.forEach((t, i) => drawLine(ctx, t, r.l + pad, r.t + 1 / scale() + fs * 0.92 + i * lh, fs, INK));
+      } else {
+        const t = clean(v).replace(/\n/g, " "), w = TW(t, fs);
+        const x = f.align === 1 ? r.l + (r.w - w) / 2 : f.align === 2 ? r.l + r.w - pad - w : r.l + pad;
+        drawLine(ctx, t, x, r.t + r.h / 2 + fs * 0.35, fs, INK);
+      }
+      ctx.restore();
+    } else if ((kind === "check" || kind === "radio") && formValues[n] === el.dataset.on) {
+      const m = Math.min(r.w, r.h), cx = r.l + r.w / 2, cy = r.t + r.h / 2;
+      ctx.fillStyle = INK; ctx.strokeStyle = INK;
+      if (kind === "radio") { ctx.beginPath(); ctx.arc(cx, cy, m * 0.25, 0, Math.PI * 2); ctx.fill(); }
+      else { ctx.lineWidth = Math.max(0.8, m * 0.12); ctx.beginPath(); ctx.moveTo(cx - m * 0.3, cy + m * 0.02); ctx.lineTo(cx - m * 0.08, cy + m * 0.25); ctx.lineTo(cx + m * 0.32, cy - m * 0.27); ctx.stroke(); }
+    }
+  }
+  // Häkchen/Kreuze
+  for (const o of objects) if (o.type === "check" && o.page === p.num) {
+    const bx = o.box, sx = bx.w / 100, sy = bx.h / 100;
+    ctx.strokeStyle = solidColor(o.color); ctx.lineWidth = 12 * Math.min(sx, sy);
+    ctx.beginPath();
+    if (o.mark === "v") { ctx.moveTo(bx.l + 18 * sx, bx.t + 52 * sy); ctx.lineTo(bx.l + 42 * sx, bx.t + 76 * sy); ctx.lineTo(bx.l + 84 * sx, bx.t + 22 * sy); }
+    else { ctx.moveTo(bx.l + 20 * sx, bx.t + 20 * sy); ctx.lineTo(bx.l + 80 * sx, bx.t + 80 * sy); ctx.moveTo(bx.l + 80 * sx, bx.t + 20 * sy); ctx.lineTo(bx.l + 20 * sx, bx.t + 80 * sy); }
+    ctx.stroke();
+  }
+  // Text (auch der gerade bearbeitete)
+  for (const o of objects) if (o.type === "text" && o.page === p.num && o.text) {
+    const L = layoutText(o), col = solidColor(o.color);
+    for (const ln of L.lines) drawLine(ctx, ln.t, ln.x, ln.base, L.size, col);
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 let rvT = null;
 function renderVisibleSoon(ms = 160) {
@@ -362,7 +463,7 @@ function placePct(el, p, l, t, w, h) {
   el.style.width = (w / p.w * 100) + "%"; if (h != null) el.style.height = (h / p.h * 100) + "%";
 }
 function buildForms(p) {
-  p.forms.innerHTML = "";
+  p.forms.innerHTML = ""; p.fieldDraw = [];
   for (const a of p.widgets) {
     const k = fieldKind(a), n = a.fieldName, r = rectOf(p, a);
     let el = null;
@@ -406,6 +507,8 @@ function buildForms(p) {
       el.addEventListener("click", () => openSigChooser({ page: p.num, box: r }));
     } else continue;
     el.classList.add("ff"); el.dataset.name = n; el.dataset.kind = k;
+    if (k !== "sig") p.fieldDraw.push({ el, r, n, k, ro: !!a.readOnly, multi: !!a.multiLine, pw: !!a.password, opts: a.options || [],
+      align: a.textAlignment || 0, fs: k === "text" ? parseFloat(el.style.fontSize.match(/\*\s*([\d.]+)px/)[1]) : Math.min(r.h * 0.65, 13) });
     if (a.readOnly) el.disabled = true;
     placePct(el, p, r.l, r.t, r.w, r.h);
     p.forms.appendChild(el);
@@ -417,6 +520,7 @@ function syncChecks(name) {
     if (name && el.dataset.name !== name) continue;
     el.textContent = formValues[el.dataset.name] === el.dataset.on ? (el.dataset.kind === "radio" ? "●" : "✓") : "";
   }
+  composeSoon();
 }
 function setFormValue(n, v, src) {
   formValues[n] = v;
@@ -425,6 +529,7 @@ function setFormValue(n, v, src) {
     if (el.dataset.kind === "text" || el.dataset.kind === "choice") el.value = v;
   }
   syncChecks(n);
+  composeSoon();
   scheduleSave();
 }
 
@@ -728,6 +833,7 @@ function strokeEl(o) {
 function renderInk(p) {
   p.svg.innerHTML = "";
   for (const o of objects) if (o.type === "stroke" && o.page === p.num) p.svg.appendChild(strokeEl(o));
+  composeSoon(p);
 }
 let cur = null; // active drawing
 const touchIds = new Set();
@@ -735,6 +841,7 @@ function cancelStroke() {
   if (cur && cur.o) {
     objects = objects.filter((x) => x !== cur.o);
     if (cur.el) cur.el.remove();
+    composeSoon(cur.p);
   }
   cur = null;
 }
@@ -757,7 +864,7 @@ function attachDraw(p) {
       const st = settings[tool];
       const o = { id: uid(), type: "stroke", page: p.num, kind: tool, color: st.color, width: st.width, opacity: tool === "marker" ? 0.4 : 1, points: [pt] };
       objects.push(o);
-      const el = strokeEl(o); p.svg.appendChild(el);
+      const el = strokeEl(o); el.classList.add("live"); p.svg.appendChild(el);
       cur = { p, o, el, id: e.pointerId };
     } else if (tool === "eraser") {
       cur = { p, id: e.pointerId, erased: false };
@@ -783,7 +890,7 @@ function attachDraw(p) {
     if (e.pointerType === "touch") touchIds.delete(e.pointerId);
     if (!cur || cur.id !== e.pointerId || cur.p !== p) return;
     const c = cur; cur = null;
-    if (c.o) commit();
+    if (c.o) { c.el.classList.remove("live"); composeSoon(p); commit(); }
     else if (tool === "eraser") { if (c.erased) commit(); }
 
   };
@@ -808,6 +915,7 @@ function eraseAt(p, pt) {
   if (!hit.length) return;
   objects = objects.filter((o) => !hit.includes(o));
   for (const o of hit) { const el = p.svg.querySelector(`[data-id="${o.id}"]`); if (el) el.remove(); }
+  composeSoon(p);
   if (cur) cur.erased = true;
 }
 
@@ -870,6 +978,7 @@ function renderObjs(p) {
     else if (o.type === "sig") p.objs.appendChild(makeSigEl(o, p));
   }
   if (p.detected) renderHints(p);
+  composeSoon(p);
 }
 function renderAll() { for (const p of pages) { renderInk(p); renderObjs(p); } }
 const pt = (v) => `calc(var(--s) * ${v.toFixed(2)}px)`;
@@ -925,6 +1034,7 @@ function fillTextEl(el, o) {
     s.style.fontSize = pt(L.size); s.style.color = solidColor(o.color); s.style.webkitTextFillColor = solidColor(o.color);
     el.appendChild(s);
   }
+  const pg = pages[o.page - 1]; if (pg) composeSoon(pg);
 }
 function makeCheckEl(o) {
   const el = document.createElement("div");
@@ -938,7 +1048,7 @@ function makeCheckEl(o) {
 
 /* ---------- Hinweise auf erkannte Stellen ---------- */
 function renderHints(p) {
-  p.hints.innerHTML = "";
+  p.hints.innerHTML = ""; p.hintRects = []; composeSoon(p);
   if (!settings.hints) return;
   const used = new Set(objects.filter((o) => o.page === p.num && o.targetId).map((o) => o.targetId));
   const pts = [];
@@ -956,8 +1066,10 @@ function renderHints(p) {
     if (t.kind === "line") {
       const hh = Math.min(b.h, 13);
       d.style.left = pt(b.l); d.style.top = pt(t.lineY - hh); d.style.width = pt(b.w); d.style.height = pt(hh);
+      p.hintRects.push({ kind: "line", l: b.l, t: t.lineY - hh, w: b.w, h: hh });
     } else {
       d.style.left = pt(b.l + 0.8); d.style.top = pt(b.t + 0.8); d.style.width = pt(Math.max(1, b.w - 1.6)); d.style.height = pt(Math.max(1, b.h - 1.6));
+      p.hintRects.push({ kind: t.kind, l: b.l + 0.8, t: b.t + 0.8, w: Math.max(1, b.w - 1.6), h: Math.max(1, b.h - 1.6) });
     }
     if (t.sig) d.dataset.ic = "✍️"; else if (t.date) d.dataset.ic = "📅";
     p.hints.appendChild(d);
@@ -1082,7 +1194,7 @@ function startEdit(o, p, target) {
     }
     if (chips) { chips.style.left = pt(o.mode === "free" ? o.x : o.box.l); chips.style.top = `calc(${ta.style.top} - 40px)`; }
   };
-  const onInput = () => { o.text = ta.value; place(); };
+  const onInput = () => { o.text = ta.value; place(); composeSoon(p); };
   editing.place = place;
   ta.addEventListener("input", onInput);
   ta.addEventListener("keydown", (e) => {
@@ -1116,6 +1228,7 @@ function finishEdit(silent) {
   editing = null; lastFinish = Date.now();
   o.text = ta.value;
   ta.remove(); if (chips) chips.remove();
+  composeSoon(p);
   if (silent) return;
   if (!o.text.trim()) {
     objects = objects.filter((x) => x !== o);
@@ -1230,6 +1343,7 @@ function setTool(t) {
   $("#bPen .ic").textContent = t === "marker" ? "🖍️" : t === "eraser" ? "🧽" : "✏️";
   $("#bPen .lb").textContent = t === "marker" ? "Marker" : t === "eraser" ? "Radierer" : "Stift";
   if (t !== "write") select(null);
+  composeSoon();
   refreshPop();
 }
 const pop = $("#pop");
@@ -1515,7 +1629,8 @@ async function buildExport() {
   try { return await out.save(); }
   catch (e) { console.warn("save mit Feld-Darstellung fehlgeschlagen", e); return await out.save({ updateFieldAppearances: false }); }
 }
-function outName() { return (fileName || "Dokument.pdf").replace(/\.pdf$/i, "") + "_bearbeitet.pdf"; }
+// Gleicher Name wie das Original (kein „_bearbeitet“), damit Dateien-App/Finder ersetzen kann
+function outName() { const n = fileName || "Dokument.pdf"; return /\.pdf$/i.test(n) ? n : n + ".pdf"; }
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 let readyFile = null;
 function download(file) {
@@ -1524,6 +1639,9 @@ function download(file) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
   toast("PDF gespeichert: " + file.name + (isMobile ? "" : " (Downloads)"), 3500);
+}
+async function writeToHandle(h, bytes) {
+  const w = await h.createWritable(); await w.write(bytes); await w.close();
 }
 async function share(file) {
   // Nur die Datei teilen – kein title/text, sonst zeigt iOS „2 Objekte“ und „Sichern“ ist gesperrt
@@ -1534,6 +1652,18 @@ $("#bDone").onclick = async () => {
   finishEdit(); closePop();
   if (!pdfBytes) return;
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  // Schreibrecht gleich beim Tippen holen (braucht die Nutzer-Geste, also vor dem Erstellen)
+  let handle = null;
+  if (fileHandle && !isMobile) {
+    try {
+      let st = fileHandle.queryPermission ? await fileHandle.queryPermission({ mode: "readwrite" }) : "granted";
+      if (st !== "granted" && fileHandle.requestPermission) st = await fileHandle.requestPermission({ mode: "readwrite" });
+      if (st === "granted") handle = fileHandle;
+    } catch (e) { console.warn(e); }
+  } else if (!isMobile && typeof window.showSaveFilePicker === "function") {
+    try { handle = await window.showSaveFilePicker({ suggestedName: outName(), types: PDF_TYPES }); }
+    catch (e) { if (e && e.name === "AbortError") return; console.warn(e); }
+  }
   busy(true, "PDF wird erstellt …");
   let file;
   try {
@@ -1542,6 +1672,16 @@ $("#bDone").onclick = async () => {
     window.__lastExport = bytes;
   } catch (e) {
     console.error(e); busy(false); alert("Export fehlgeschlagen: " + (e && e.message ? e.message : e)); return;
+  }
+  if (handle) {
+    try {
+      busy(true, "Wird gespeichert …");
+      await writeToHandle(handle, window.__lastExport);
+      busy(false);
+      if (handle !== fileHandle) { fileHandle = handle; idb("put", "handle", handle); }
+      toast("Gespeichert ✓", 2500);
+      return;
+    } catch (e) { console.warn("Überschreiben fehlgeschlagen", e); }
   }
   busy(false);
   if (isMobile && navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1563,12 +1703,14 @@ setTool("write");
     try {
       busy(true, "Letzte Datei wird geladen …");
       await loadPdf(new Uint8Array(saved.bytes), saved.name, await idb("get", "state"));
+      const h = await idb("get", "handle");
+      if (h && h.name === saved.name) fileHandle = h;
       toast("Letzte Bearbeitung wiederhergestellt");
     } catch (e) { console.warn(e); await idb("del", "pdf"); await idb("del", "state"); resetDoc(); document.body.classList.remove("has-doc"); }
     finally { busy(false); }
   }
 })();
-window.__pdfEditor = { get objects() { return objects; }, get formValues() { return formValues; }, get pages() { return pages; }, buildExport, setTool, loadPdf, layoutText };
+window.__pdfEditor = { get objects() { return objects; }, get formValues() { return formValues; }, get pages() { return pages; }, buildExport, setTool, loadPdf, layoutText, get fileHandle() { return fileHandle; }, outName };
 
 /* ---------- service worker (network-first, auto update) ---------- */
 function setupServiceWorker() {
