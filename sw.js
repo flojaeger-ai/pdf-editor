@@ -1,4 +1,4 @@
-const CACHE = 'pdf-editor-v2';
+const CACHE = 'pdf-editor-v3';
 const PRECACHE = ['./', './index.html', './app.js', './manifest.webmanifest', './icon-180.png', './icon-192.png', './icon-512.png', './vendor/pdf.min.mjs', './vendor/pdf.worker.min.mjs', './vendor/pdf-lib.min.js'];
 
 self.addEventListener('install', (e) => {

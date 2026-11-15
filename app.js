@@ -3,7 +3,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
 const { PDFDocument, rgb, StandardFonts, degrees, LineCapStyle, BlendMode,
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } = window.PDFLib;
 
-const APP_VERSION = 2; /* Version 2 */
+const APP_VERSION = 3; /* Version 3 */
 const $ = (s) => document.querySelector(s);
 const viewer = $("#viewer"), pagesEl = $("#pages");
 $("#ver").textContent = "v" + APP_VERSION;
@@ -20,12 +20,13 @@ let penKind = "pen";         // last used drawing tool
 let zoom = 1, baseScale = 1;
 let selectedId = null;
 let hist = [], hIndex = -1;
-const PEN_COLORS = ["#1d1d1f", "#1f4fbf", "#d32f2f", "#1f9d55"];
+const PEN_COLORS = ["#111111", "#1f4fbf", "#d32f2f", "#1f9d55"];
+const INK = "#111111";
 const MK_COLORS = ["#ffd400", "#7ee35a", "#ff8ad1", "#6ec6ff"];
 const settings = {
-  pen: { color: "#1d1d1f", width: 2 },
+  pen: { color: "#111111", width: 2 },
   marker: { color: "#ffd400", width: 14 },
-  text: { color: "#1d1d1f", size: 11 },
+  text: { color: "#111111", size: 11 },
   check: "x",
   hints: true,
 };
@@ -35,6 +36,13 @@ try {
   if (s.check) settings.check = s.check;
   if (typeof s.hints === "boolean") settings.hints = s.hints;
 } catch (e) {}
+function solidColor(c) {
+  if (typeof c !== "string" || !/^#[0-9a-f]{6}$/i.test(c)) return INK;
+  const n = parseInt(c.slice(1), 16), l = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return (l > 0.55 || c.toLowerCase() === "#1d1d1f") ? INK : c;
+}
+settings.text.color = solidColor(settings.text.color);
+settings.pen.color = solidColor(settings.pen.color);
 const saveSettings = () => { try { localStorage.setItem("pdfeditor.settings", JSON.stringify(settings)); } catch (e) {} };
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 const scale = () => baseScale * zoom;
@@ -913,7 +921,7 @@ function fillTextEl(el, o) {
     const s = document.createElement("span"); s.className = "ln";
     s.textContent = ln.t || "\u200b";
     s.style.left = pt(ln.x); s.style.top = pt(ln.base - ASC * L.size);
-    s.style.fontSize = pt(L.size); s.style.color = o.color;
+    s.style.fontSize = pt(L.size); s.style.color = solidColor(o.color); s.style.webkitTextFillColor = solidColor(o.color);
     el.appendChild(s);
   }
 }
@@ -922,8 +930,8 @@ function makeCheckEl(o) {
   el.className = "chk"; el.dataset.id = o.id;
   el.style.left = pt(o.box.l); el.style.top = pt(o.box.t); el.style.width = pt(o.box.w); el.style.height = pt(o.box.h);
   el.innerHTML = o.mark === "v"
-    ? `<svg viewBox="0 0 100 100"><polyline points="18,52 42,76 84,22" fill="none" stroke="${o.color}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>`
-    : `<svg viewBox="0 0 100 100"><path d="M20 20 L80 80 M80 20 L20 80" fill="none" stroke="${o.color}" stroke-width="12" stroke-linecap="round"/></svg>`;
+    ? `<svg viewBox="0 0 100 100"><polyline points="18,52 42,76 84,22" fill="none" stroke="${solidColor(o.color)}" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+    : `<svg viewBox="0 0 100 100"><path d="M20 20 L80 80 M80 20 L20 80" fill="none" stroke="${solidColor(o.color)}" stroke-width="12" stroke-linecap="round"/></svg>`;
   return el;
 }
 
@@ -932,8 +940,15 @@ function renderHints(p) {
   p.hints.innerHTML = "";
   if (!settings.hints) return;
   const used = new Set(objects.filter((o) => o.page === p.num && o.targetId).map((o) => o.targetId));
+  const pts = [];
+  for (const o of objects) if (o.page === p.num) {
+    if (o.type === "text" && o.text && o.text.trim()) for (const ln of layoutText(o).lines) pts.push([ln.x + 2, ln.base - 2]);
+    else if (o.type === "sig") pts.push([o.x + o.w / 2, o.y + o.h * 0.8]);
+  }
   for (const t of p.targets) {
     if (used.has(t.id)) continue;
+    const tb = t.box, bottom = t.kind === "line" ? t.lineY + 3 : tb.t + tb.h;
+    if (pts.some(([x, y]) => x >= tb.l - 3 && x <= tb.l + tb.w && y >= tb.t - 3 && y <= bottom)) continue;
     const d = document.createElement("div");
     d.className = "hint " + t.kind + (t.sig ? " sig" : "") + (t.date ? " date" : "");
     const b = t.box;
@@ -1020,7 +1035,7 @@ function startEdit(o, p, target) {
   ta.setAttribute("autocapitalize", "sentences"); ta.setAttribute("autocomplete", "off");
   if (o.mode === "line") { ta.setAttribute("wrap", "off"); ta.enterKeyHint = "next"; }
   else ta.enterKeyHint = o.mode === "free" ? "enter" : "done";
-  ta.style.color = o.color;
+  ta.style.color = solidColor(o.color); ta.style.webkitTextFillColor = solidColor(o.color);
   p.objs.appendChild(ta);
   const t = target || (o.targetId ? p.targets.find((x) => x.id === o.targetId) : null);
   let chips = null;
@@ -1269,7 +1284,7 @@ function refreshPop() {
     const r1 = row(o ? "Farbe dieses Texts" : "Textfarbe");
     for (const c of PEN_COLORS) btn(r1, "sw", "", (o ? o.color : settings.text.color) === c, () => {
       settings.text.color = c; saveSettings();
-      if (o) { o.color = c; editing.ta.style.color = c; }
+      if (o) { o.color = c; editing.ta.style.color = c; editing.ta.style.webkitTextFillColor = c; }
     }).style.background = c;
     const r2 = row(o ? "Größe dieses Texts" : "Schriftgröße (frei platzierter Text)");
     const cur = o ? o.size : settings.text.size;
@@ -1467,14 +1482,14 @@ async function buildExport() {
       pg.drawSvgPath(d, opt);
     } else if (o.type === "text") {
       if (!o.text || !o.text.trim()) continue;
-      const L = layoutText(o), color = hexRgb(o.color);
+      const L = layoutText(o), color = hexRgb(solidColor(o.color));
       for (const ln of L.lines) {
         if (!ln.t) continue;
         const [x, y] = conv(ln.x, ln.base);
         pg.drawText(ln.t, { x, y, size: L.size, font, color, rotate: degrees(ang(ln.x, ln.base)) });
       }
     } else if (o.type === "check") {
-      const b = o.box, ins = Math.min(b.w, b.h) * 0.2, lw = Math.max(0.8, Math.min(b.w, b.h) * 0.12), color = hexRgb(o.color);
+      const b = o.box, ins = Math.min(b.w, b.h) * 0.2, lw = Math.max(0.8, Math.min(b.w, b.h) * 0.12), color = hexRgb(solidColor(o.color));
       const P = (fx, fy) => { const [x, y] = conv(b.l + b.w * fx, b.t + b.h * fy); return { x, y }; };
       const segs = o.mark === "v" ? [[P(0.18, 0.52), P(0.42, 0.76)], [P(0.42, 0.76), P(0.84, 0.22)]] : [[P(0.2, 0.2), P(0.8, 0.8)], [P(0.8, 0.2), P(0.2, 0.8)]];
       for (const [a, c] of segs) pg.drawLine({ start: a, end: c, thickness: lw, color, lineCap: LineCapStyle.Round });
