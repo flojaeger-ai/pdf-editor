@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-  <meta name="color-scheme" content="light" />
+  <meta name="color-scheme" content="only light" />
+  <meta name="darkreader-lock" />
   <meta name="supported-color-schemes" content="light" />
   <meta name="theme-color" content="#b23a2e" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -17,7 +18,7 @@
   <link rel="icon" type="image/png" href="icon-192.png" />
   <style>
     :root {
-      color-scheme: light;
+      color-scheme: only light;
       --brand: #b23a2e;
       --brand-d: #8f2c22;
       --ink: #1d1d1f;
@@ -30,7 +31,7 @@
       --sar: env(safe-area-inset-right, 0px);
     }
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    html, body { margin: 0; height: 100%; background: #fff; color: var(--ink); color-scheme: light; }
+    html, body { margin: 0; height: 100%; background: #fff; color: var(--ink); color-scheme: only light; forced-color-adjust: none; }
     body {
       font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden;
@@ -162,14 +163,18 @@
     .dlg { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none; align-items: center; justify-content: center; z-index: 100;
       padding: calc(12px + var(--sat)) calc(12px + var(--sar)) calc(12px + var(--sab)) calc(12px + var(--sal)); }
     .dlg.open { display: flex; }
-    .dlg .box { background: #fff; border-radius: 16px; width: 100%; max-width: 640px; max-height: 100%; overflow: auto; padding: 16px; }
+    .dlg .box, .dlg .box h2, .dlg .box p { color: #111 !important; }
+    .dlg .btn { background: #fff !important; color: #111 !important; border-color: #d9dde3 !important; }
+    .dlg .btn.primary { background: var(--brand) !important; color: #fff !important; border-color: var(--brand) !important; }
+    #padwrap, .sigitem { background: #fff !important; }
+    .dlg .box { background: #fff !important; border-radius: 16px; width: 100%; max-width: 640px; max-height: 100%; overflow: auto; padding: 16px; }
     .dlg h2 { margin: 0 0 10px; font-size: 18px; }
     .dlg .row { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 12px; align-items: center; }
     .dlg .row .grow { flex: 1; }
     .btn { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 10px 16px; font-weight: 600; min-height: 42px; }
     .btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; }
     #padwrap { position: relative; border: 1px solid var(--line); border-radius: 12px; background: #fff; overflow: hidden; }
-    #pad { display: block; width: 100%; height: 220px; touch-action: none; cursor: crosshair; }
+    #pad { display: block; width: 100%; height: 220px; touch-action: none; cursor: crosshair; background: #fff !important; }
     #padwrap .base { position: absolute; left: 7%; right: 7%; bottom: 52px; border-top: 1.5px solid #c9ced6; pointer-events: none; }
     #padwrap .x { position: absolute; left: 7%; bottom: 56px; color: #9aa1ab; font-size: 18px; pointer-events: none; }
     #padwrap .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #b7bcc4; pointer-events: none; font-size: 15px; }
@@ -275,6 +280,6 @@
   <div id="toast"></div>
 
   <script src="vendor/pdf-lib.min.js"></script>
-  <script type="module" src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>

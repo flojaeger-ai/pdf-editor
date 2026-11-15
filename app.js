@@ -3,7 +3,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
 const { PDFDocument, rgb, StandardFonts, degrees, LineCapStyle, BlendMode,
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } = window.PDFLib;
 
-const APP_VERSION = 3; /* Version 3 */
+const APP_VERSION = 4; /* Version 4 */
 const $ = (s) => document.querySelector(s);
 const viewer = $("#viewer"), pagesEl = $("#pages");
 $("#ver").textContent = "v" + APP_VERSION;
@@ -92,7 +92,7 @@ async function idb(mode, key, val) {
 let saveT = null;
 function scheduleSave() {
   clearTimeout(saveT);
-  saveT = setTimeout(() => { if (pdfBytes) idb("put", "state", { objects, formValues }); }, 400);
+  saveT = setTimeout(() => { if (pdfBytes) idb("put", "state", { v: 3, objects, formValues }); }, 400);
 }
 
 
@@ -112,7 +112,7 @@ fileInput.onchange = async () => {
     const buf = new Uint8Array(await f.arrayBuffer());
     await loadPdf(buf, f.name || "Dokument.pdf", null);
     await idb("put", "pdf", { name: fileName, bytes: buf });
-    await idb("put", "state", { objects, formValues });
+    await idb("put", "state", { v: 3, objects, formValues });
     if (!localStorage.getItem("pdfeditor.hinted")) {
       setTimeout(() => toast("Tipp einfach auf eine Linie oder ein Feld und schreib los.", 4500), 600);
       try { localStorage.setItem("pdfeditor.hinted", "1"); } catch (e) {}
@@ -167,6 +167,7 @@ async function loadPdf(bytes, name, saved) {
   }
   if (saved) {
     objects = migrate(Array.isArray(saved.objects) ? saved.objects : []);
+    if (!saved.v || saved.v < 3) for (const o of objects) if (o.type === "text" && o.size > 11) o.size = 11; // v2 hat teils größer gesetzt
     if (saved.formValues) for (const k in saved.formValues) if (k in formValues) formValues[k] = saved.formValues[k];
   }
   hist = [JSON.stringify(objects)]; hIndex = 0; updateUndo();
@@ -642,7 +643,7 @@ async function detectPage(p) {
       else continue;
     }
     const f = flags(label);
-    const size = clamp(Math.min(box.h * 0.6, lsize ? lsize : 11), 6, 11);
+    const size = clamp(box.h * 0.6, 6, 11); // einheitlich 11 pt, nur bei engen Zellen kleiner
     push({ kind: "cell", box, size, label: label.trim(), ...f });
   }
 
@@ -677,7 +678,7 @@ async function detectPage(p) {
     const h = clamp(gapUp, 9, 24);
     const label = [left && left.str, below && below.str].filter(Boolean).join(" ");
     const lsize = left ? left.size : (ln.size || 0);
-    const size = lsize ? clamp(lsize, 7, 12) : clamp(h * 0.55, 7, 11);
+    const size = Math.min(11, Math.max(7, h * 0.8)); // einheitlich 11 pt, auch auf breiten Linien
     push({ kind: "line", box: { l: ln.x1 + 1.5, t: ln.y - h, w: len - 3, h }, lineY: ln.y, size, label, ...flags(label) });
   }
 
@@ -986,8 +987,8 @@ function attachTap(p) {
     closePop();
     const t = p.detected ? hitTarget(p, x, y) : null;
     if (t) { activateTarget(p, t); return; }
-    const near = nearestTextSize(p, x, y);
-    const o = { id: uid(), type: "text", page: p.num, mode: "free", x, base: y + (near || settings.text.size) * 0.35, size: near || settings.text.size, color: settings.text.color, text: "" };
+    const fs = settings.text.size || 11;
+    const o = { id: uid(), type: "text", page: p.num, mode: "free", x, base: y + fs * 0.35, size: fs, color: settings.text.color, text: "" };
     objects.push(o);
     const el = makeTextEl(o, p); p.objs.appendChild(el);
     startEdit(o, p);
@@ -1344,6 +1345,7 @@ function sizePad() {
 function drawPad() {
   const ctx = pad.getContext("2d"), dpr = window.devicePixelRatio || 1;
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pad.width, pad.height);
+  ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, pad.width, pad.height); // weißer Grund im Bild selbst (auch bei Dunkelmodus)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   strokeAll(ctx, padStrokes, 2.6, padColor);
   $("#padph").style.display = padStrokes.length ? "none" : "flex";
@@ -1583,7 +1585,7 @@ function setupServiceWorker() {
     if (!hadController) { hadController = true; return; } // erste Installation: kein Reload nötig
     // Bearbeitung vor dem Neuladen in IndexedDB sichern
     clearTimeout(saveT);
-    if (pdfBytes) idb("put", "state", { objects, formValues }).then(refreshOnce); else refreshOnce();
+    if (pdfBytes) idb("put", "state", { v: 3, objects, formValues }).then(refreshOnce); else refreshOnce();
   });
   const checkUpdate = (reg) => { if (reg && reg.update) reg.update().catch(() => {}); };
   navigator.serviceWorker.register("./sw.js", { scope: "./" }).then((reg) => {
