@@ -3,7 +3,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
 const { PDFDocument, rgb, StandardFonts, degrees, LineCapStyle, BlendMode,
   PDFTextField, PDFCheckBox, PDFDropdown, PDFRadioGroup, PDFOptionList } = window.PDFLib;
 
-const APP_VERSION = 4; /* Version 4 */
+const APP_VERSION = 5; /* Version 5 */
 const $ = (s) => document.querySelector(s);
 const viewer = $("#viewer"), pagesEl = $("#pages");
 $("#ver").textContent = "v" + APP_VERSION;
@@ -1336,6 +1336,16 @@ function openSigChooser(target) {
   openDlg("#dlgChoose");
 }
 const pad = $("#pad"); let padStrokes = [], padCur = null, padColor = "#111827";
+const PAD_WIDTHS = [2.4, 3.8, 5.4, 7.5]; // mittel ≈ 1,45 × der bisherigen Stärke (2,6)
+let padWidth = parseFloat(localStorage.getItem("pdfeditor.sigWidth")) || 3.8;
+if (!PAD_WIDTHS.includes(padWidth)) padWidth = 3.8;
+function syncPadWidth() { for (const x of document.querySelectorAll("[data-pw]")) x.classList.toggle("on", parseFloat(x.dataset.pw) === padWidth); }
+for (const b of document.querySelectorAll("[data-pw]")) b.onclick = () => {
+  padWidth = parseFloat(b.dataset.pw);
+  try { localStorage.setItem("pdfeditor.sigWidth", String(padWidth)); } catch (e) {}
+  syncPadWidth(); drawPad(); // vorhandene Striche werden in neuer Stärke neu gezeichnet
+};
+syncPadWidth();
 function openPad() { padStrokes = []; openDlg("#dlgPad"); requestAnimationFrame(sizePad); }
 function sizePad() {
   const r = pad.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
@@ -1347,7 +1357,7 @@ function drawPad() {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, pad.width, pad.height);
   ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, pad.width, pad.height); // weißer Grund im Bild selbst (auch bei Dunkelmodus)
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  strokeAll(ctx, padStrokes, 2.6, padColor);
+  strokeAll(ctx, padStrokes, padWidth, padColor);
   $("#padph").style.display = padStrokes.length ? "none" : "flex";
 }
 function strokeAll(ctx, strokes, lw, color) {
@@ -1379,11 +1389,11 @@ $("#padSave").onclick = () => {
   if (!padStrokes.length) { toast("Bitte zuerst unterschreiben"); return; }
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const s of padStrokes) for (const [x, y] of s) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
-  const k = 3, m = 4;
+  const k = 3, m = 4 + padWidth / 2;
   const c = document.createElement("canvas");
   c.width = Math.ceil((x1 - x0 + 2 * m) * k); c.height = Math.ceil((y1 - y0 + 2 * m) * k);
   const ctx = c.getContext("2d"); ctx.setTransform(k, 0, 0, k, (m - x0) * k, (m - y0) * k);
-  strokeAll(ctx, padStrokes, 2.6, padColor);
+  strokeAll(ctx, padStrokes, padWidth, padColor);
   const data = c.toDataURL("image/png");
   const sigs = loadSigs(); sigs.unshift({ id: uid(), data });
   storeSigs(sigs.slice(0, 6));

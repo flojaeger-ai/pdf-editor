@@ -167,6 +167,10 @@
     .dlg .btn { background: #fff !important; color: #111 !important; border-color: #d9dde3 !important; }
     .dlg .btn.primary { background: var(--brand) !important; color: #fff !important; border-color: var(--brand) !important; }
     #padwrap, .sigitem { background: #fff !important; }
+    .pwgroup { display: inline-flex; gap: 4px; margin-left: 6px; padding-left: 10px; border-left: 1px solid #e5e7eb; }
+    .dlg .pw { width: 44px; height: 44px; border-radius: 12px; border: 1px solid #d9dde3 !important; background: #fff !important; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+    .dlg .pw.on { border: 2px solid #111 !important; background: #f3f4f6 !important; }
+    .dlg .pw i { display: block; border-radius: 50%; background: #111 !important; }
     .dlg .box { background: #fff !important; border-radius: 16px; width: 100%; max-width: 640px; max-height: 100%; overflow: auto; padding: 16px; }
     .dlg h2 { margin: 0 0 10px; font-size: 18px; }
     .dlg .row { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 12px; align-items: center; }
@@ -259,6 +263,12 @@
       <div class="row">
         <button class="sw on" data-pc="#111827" style="background:#111827" title="Schwarz"></button>
         <button class="sw" data-pc="#1f3fbf" style="background:#1f3fbf" title="Blau"></button>
+        <span class="pwgroup" aria-label="Strichstärke">
+          <button class="pw" data-pw="2.4" title="Dünn"><i style="width:5px;height:5px"></i></button>
+          <button class="pw" data-pw="3.8" title="Mittel"><i style="width:8px;height:8px"></i></button>
+          <button class="pw" data-pw="5.4" title="Dick"><i style="width:12px;height:12px"></i></button>
+          <button class="pw" data-pw="7.5" title="Extra dick"><i style="width:17px;height:17px"></i></button>
+        </span>
         <span class="grow"></span>
         <button class="btn" id="padClear">Löschen</button>
         <button class="btn" data-close>Abbrechen</button>
@@ -280,6 +290,6 @@
   <div id="toast"></div>
 
   <script src="vendor/pdf-lib.min.js"></script>
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>
