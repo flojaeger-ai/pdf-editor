@@ -52,30 +52,34 @@
     .hbtn.primary { background: #fff; color: var(--brand); }
     .hbtn[disabled] { opacity: .45; pointer-events: none; }
     #toolbar { flex: 0 0 auto; background: #fff; border-bottom: 1px solid var(--line); z-index: 15; }
-    .tools { display: flex; justify-content: center; gap: 2px; padding: 4px calc(6px + var(--sar)) 2px calc(6px + var(--sal)); }
-    .tool {
-      flex: 0 1 76px; min-width: 0; border: 0; background: none; border-radius: 10px; padding: 5px 2px 4px;
-      display: flex; flex-direction: column; align-items: center; gap: 1px; color: #374151;
+    .tools { display: flex; justify-content: center; gap: 6px; padding: 6px calc(8px + var(--sar)) 6px calc(8px + var(--sal)); }
+    .tb {
+      flex: 0 1 132px; min-width: 0; border: 0; background: #f3f4f6; border-radius: 14px; padding: 8px 6px; min-height: 56px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #1f2937;
     }
-    .tool .ic { font-size: 21px; line-height: 24px; height: 24px; }
-    .tool .lb { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-    .tool.on { background: #fbe9e7; color: var(--brand); }
-    .tool[disabled] { opacity: .35; pointer-events: none; }
-    .tool .ic.t { font: 700 21px/24px Georgia, "Times New Roman", serif; }
-    .sep { width: 1px; background: var(--line); margin: 6px 4px; flex: 0 0 1px; }
-    .opts {
-      display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
-      min-height: 44px; padding: 4px calc(10px + var(--sar)) 6px calc(10px + var(--sal)); border-top: 1px solid #f0f1f3;
-    }
-    .opts .hint { color: var(--muted); font-size: 13px; text-align: center; }
-    .sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #c7ccd3; padding: 0; }
-    .sw.on { box-shadow: 0 0 0 2px var(--ink); }
-    .wd { width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line); background: #fff; display: flex; align-items: center; justify-content: center; padding: 0; }
+    .tb .ic { font-size: 22px; line-height: 24px; height: 24px; }
+    .tb .ic.aa { font: 700 20px/24px Georgia, "Times New Roman", serif; }
+    .tb .lb { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .tb .lb small { font-size: 10px; opacity: .55; margin-left: 2px; }
+    .tb.on { background: #fbe9e7; color: var(--brand); box-shadow: inset 0 0 0 2px #f2b8b0; }
+    .tb[disabled] { opacity: .35; pointer-events: none; }
+    .tb.done { background: var(--brand); color: #fff; }
+    .tb.done:active { background: var(--brand-d); }
+    #pop { position: fixed; z-index: 60; background: #fff; border-radius: 16px; box-shadow: 0 6px 28px rgba(0,0,0,.22); padding: 10px 12px 12px; display: none; max-width: min(360px, calc(100vw - 16px)); }
+    #pop.open { display: block; }
+    #pop .pt { font-size: 12px; color: var(--muted); margin: 8px 2px 4px; }
+    #pop .prow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    #pop .seg { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 10px; font-weight: 600; min-height: 40px; }
+    #pop .seg.on { border-color: var(--brand); color: var(--brand); background: #fbe9e7; }
+    #pop .pnote { font-size: 13px; color: var(--muted); min-width: 44px; text-align: center; }
+    .sw { width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #c7ccd3; padding: 0; }
+    .sw.on { box-shadow: 0 0 0 2.5px var(--ink); }
+    .wd { width: 40px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: #fff; display: flex; align-items: center; justify-content: center; padding: 0; }
     .wd.on { border-color: var(--ink); background: #f3f4f6; }
-    .wd i { display: block; background: var(--ink); border-radius: 99px; width: 18px; }
-    .pill { border: 1px solid var(--line); background: #fff; border-radius: 9px; padding: 6px 11px; min-height: 34px; font-weight: 600; }
-    .pill.danger { color: #c62828; border-color: #f2c4c0; }
-    .fs { min-width: 44px; text-align: center; font-size: 13px; color: var(--muted); }
+    .wd i { display: block; background: var(--ink); border-radius: 99px; width: 20px; }
+    .pill { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 7px 12px; min-height: 38px; font-weight: 600; }
+    .pill.on { border-color: var(--brand); color: var(--brand); background: #fbe9e7; }
+    .pill.wide { width: 100%; text-align: left; margin-top: 8px; }
     #stage { position: relative; flex: 1 1 auto; min-height: 0; }
     #viewer {
       position: absolute; inset: 0; overflow: auto; background: var(--bg);
@@ -88,43 +92,53 @@
     .page svg.ink path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
     .page svg.ink path.mk { mix-blend-mode: multiply; }
     .layer { position: absolute; inset: 0; pointer-events: none; }
+    .hints .hint { position: absolute; border-radius: 3px; }
+    .hints .hint.line { background: linear-gradient(to top, rgba(37,99,235,.16), rgba(37,99,235,0)); border-bottom: 1.5px solid rgba(37,99,235,.35); }
+    .hints .hint.cell { background: rgba(37,99,235,.055); }
+    .hints .hint.check { background: rgba(37,99,235,.14); border-radius: 2px; }
+    .hints .hint[data-ic]::after { content: attr(data-ic); position: absolute; right: 2px; bottom: 1px; font-size: 11px; opacity: .55; }
+    body:not(.m-write) .hints { display: none; }
+    .tap { display: none; cursor: text; touch-action: pan-x pan-y; }
+    body.m-write .tap { display: block; pointer-events: auto; }
     .draw { touch-action: none; display: none; }
-    body.t-pen .draw, body.t-marker .draw, body.t-eraser .draw, body.t-text .draw { display: block; pointer-events: auto; }
-    body.t-pen .draw, body.t-marker .draw { cursor: crosshair; }
-    body.t-eraser .draw { cursor: cell; }
-    body.t-text .draw { cursor: text; }
-    body.t-select .forms > * { pointer-events: auto; }
-    body.t-select .objs > .obj, body.t-text .objs > .obj { pointer-events: auto; }
+    body.m-pen .draw { display: block; pointer-events: auto; cursor: crosshair; }
+    body.m-write .forms > * { pointer-events: auto; }
+    .txt { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+    .txt .ln { position: absolute; white-space: pre; line-height: 1; font-family: Helvetica, Arial, "Liberation Sans", Arimo, sans-serif; touch-action: none; }
+    body.m-write .txt .ln { pointer-events: auto; cursor: text; }
+    .txt.lift .ln { background: rgba(37,99,235,.12); box-shadow: 0 2px 8px rgba(0,0,0,.18); border-radius: 2px; cursor: move; }
+    .chk { position: absolute; pointer-events: none; }
+    .chk svg { display: block; width: 100%; height: 100%; }
+    textarea.editor {
+      position: absolute; margin: 0; padding: 0 1px; border: 0; background: rgba(37,99,235,.06); resize: none; overflow: hidden;
+      font-family: Helvetica, Arial, "Liberation Sans", Arimo, sans-serif; outline: none; caret-color: #2563eb; border-radius: 2px;
+      box-shadow: 0 1.5px 0 rgba(37,99,235,.7); -webkit-user-select: text; user-select: text; pointer-events: auto; white-space: pre-wrap; z-index: 3;
+    }
+    textarea.editor[wrap="off"] { white-space: pre; }
+    .chips { position: absolute; display: flex; gap: 6px; z-index: 4; pointer-events: auto; white-space: nowrap; }
+    .chips button { border: 0; background: #2563eb; color: #fff; font-weight: 600; font-size: 14px; padding: 7px 12px; border-radius: 99px; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
     .ff { position: absolute; border: 0; margin: 0; padding: 0 2px; background: rgba(40, 110, 255, .10); color: #000;
       font-family: Helvetica, Arial, sans-serif; outline: none; border-radius: 1px; -webkit-user-select: text; user-select: text; }
     .ff:focus { background: rgba(40, 110, 255, .18); box-shadow: 0 0 0 1px rgba(40,110,255,.7); }
+    body.m-write .ff:not(:focus):not([disabled]) { box-shadow: inset 0 0 0 1px rgba(40,110,255,.28); }
     textarea.ff { resize: none; line-height: 1.15; padding-top: 1px; }
     select.ff { -webkit-appearance: none; appearance: none; padding-right: 2px; }
     .ff[disabled] { background: transparent; }
     .fchk { display: flex; align-items: center; justify-content: center; line-height: 1; font-weight: 700; padding: 0; }
     .fchk.radio { border-radius: 50%; }
-    .fsig { display: flex; align-items: center; justify-content: center; color: #1f4fbf; border: 1px dashed rgba(31,79,191,.6);
-      font-weight: 600; overflow: hidden; white-space: nowrap; }
-    body.t-select .ff:not(:focus):not([disabled]) { box-shadow: inset 0 0 0 1px rgba(40,110,255,.28); }
-    body:not(.t-select) .ff { background: transparent; box-shadow: none; }
-    body:not(.t-select) .fsig { border-color: transparent; color: transparent; }
+    .fsig { display: flex; align-items: center; justify-content: center; color: #1f4fbf; border: 1px dashed rgba(31,79,191,.6); font-weight: 600; overflow: hidden; white-space: nowrap; }
+    body:not(.m-write) .ff { background: transparent; box-shadow: none; }
+    body:not(.m-write) .fsig { border-color: transparent; color: transparent; }
     .obj { position: absolute; }
     .obj.sel { outline: 1.5px dashed #2563eb; outline-offset: 2px; }
-    .obj.text textarea {
-      display: block; width: 100%; border: 0; margin: 0; padding: 0; background: transparent; resize: none; overflow: hidden;
-      font-family: Helvetica, Arial, sans-serif; line-height: 1.2; white-space: pre-wrap; overflow-wrap: anywhere; outline: none;
-      -webkit-user-select: text; user-select: text; min-height: 1em;
-    }
-    .obj.text:not(.sel) textarea { box-shadow: inset 0 0 0 1px rgba(37,99,235,.18); }
     .obj.sig img { display: block; width: 100%; height: 100%; pointer-events: none; -webkit-user-drag: none; }
-    .obj.sig { touch-action: none; cursor: move; }
+    body.m-write .obj.sig { pointer-events: auto; touch-action: none; cursor: move; }
     .h { position: absolute; width: 28px; height: 28px; border-radius: 50%; background: #2563eb; color: #fff; border: 2px solid #fff;
       box-shadow: 0 1px 3px rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; font-size: 14px; line-height: 1;
       touch-action: none; padding: 0; z-index: 2; }
     .obj.sel .h { display: flex; }
     .h.del { top: -18px; right: -18px; background: #dc2626; }
     .h.rs { bottom: -18px; right: -18px; cursor: nwse-resize; }
-    .h.mv { top: -18px; left: -18px; cursor: move; }
     #pageind { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(17,24,39,.72); color: #fff;
       font-size: 12px; padding: 3px 10px; border-radius: 99px; pointer-events: none; z-index: 5; display: none; }
     #zoombox { position: absolute; right: calc(12px + var(--sar)); bottom: 12px; display: none; align-items: center; gap: 2px; z-index: 5;
@@ -168,40 +182,32 @@
     #busy.open { display: flex; }
     #fileinput { position: fixed; left: -9999px; width: 1px; height: 1px; opacity: 0; }
     @media (max-width: 767px) {
-      #toolbar { order: 3; border-bottom: 0; border-top: 1px solid var(--line); padding-bottom: var(--sab); display: flex; flex-direction: column; }
-      .opts { order: -1; border-top: 0; border-bottom: 1px solid #f0f1f3; }
+      #toolbar { order: 3; border-bottom: 0; border-top: 1px solid var(--line); padding-bottom: var(--sab); }
+      .tools { gap: 4px; padding-top: 6px; }
+      .tb { flex: 1 1 0; min-height: 58px; padding: 6px 2px; border-radius: 12px; }
+      .tb .lb { font-size: 11.5px; }
       .hbtn .lt { display: none; }
-      .tool { flex: 1 1 0; }
-      .tool { padding-left: 0; padding-right: 0; }
-      .tool .lb { font-size: 10px; letter-spacing: -0.2px; text-overflow: clip; }
-      .sep { display: none; }
       header .ver { display: none; }
     }
-    @media (min-width: 768px) { .hbtn .ls { display: none; } }
   </style>
 </head>
-<body class="t-select">
+<body class="m-write">
   <header>
     <button class="hbtn" id="btnOpen" title="PDF öffnen">📂<span class="lt"> Öffnen</span></button>
     <div class="title" id="title">PDF bearbeiten</div>
     <span class="ver" id="ver"></span>
     <button class="hbtn" id="btnClose" title="Datei schließen" disabled>✕</button>
-    <button class="hbtn primary" id="btnExport" disabled>⬆︎<span class="lt"> Exportieren</span><span class="ls"> PDF</span></button>
   </header>
   <div id="toolbar">
     <div class="tools">
-      <button class="tool on" data-tool="select"><span class="ic">👆</span><span class="lb">Auswahl</span></button>
-      <button class="tool" data-tool="pen"><span class="ic">✏️</span><span class="lb">Stift</span></button>
-      <button class="tool" data-tool="marker"><span class="ic">🖍️</span><span class="lb">Marker</span></button>
-      <button class="tool" data-tool="eraser"><span class="ic">🧽</span><span class="lb">Radierer</span></button>
-      <button class="tool" data-tool="text"><span class="ic t">T</span><span class="lb">Text</span></button>
-      <button class="tool" id="btnSig"><span class="ic">✍️</span><span class="lb">Unterschrift</span></button>
-      <span class="sep"></span>
-      <button class="tool" id="btnUndo" disabled><span class="ic">↶</span><span class="lb">Zurück</span></button>
-      <button class="tool" id="btnRedo" disabled><span class="ic">↷</span><span class="lb">Vor</span></button>
+      <button class="tb on" id="bWrite"><span class="ic aa">Aa</span><span class="lb">Schreiben<small>▾</small></span></button>
+      <button class="tb" id="bPen"><span class="ic">✏️</span><span class="lb">Stift</span></button>
+      <button class="tb" id="bSig"><span class="ic">✍️</span><span class="lb">Unterschrift</span></button>
+      <button class="tb" id="btnUndo" disabled><span class="ic">↶</span><span class="lb">Rückgängig</span></button>
+      <button class="tb done" id="bDone"><span class="ic">⬆︎</span><span class="lb">Fertig</span></button>
     </div>
-    <div class="opts" id="opts"></div>
   </div>
+  <div id="pop"></div>
   <div id="stage">
     <div id="viewer"><div id="pages"></div></div>
     <div id="pageind">–</div>
@@ -214,11 +220,11 @@
       <div class="card">
         <div style="font-size:44px">📄</div>
         <h1>PDF bearbeiten</h1>
-        <p>Alles bleibt auf deinem Gerät, nichts wird hochgeladen.</p>
+        <p>Öffnen, auf eine Linie oder ein Feld tippen, losschreiben. Alles bleibt auf deinem Gerät.</p>
         <ul>
-          <li>Markieren und zeichnen</li>
-          <li>Unterschreiben</li>
-          <li>Formulare ausfüllen und Text einfügen</li>
+          <li>Linien, Tabellen und Kästchen werden automatisch erkannt</li>
+          <li>Unterschrift mit einem Tipp auf die Linie</li>
+          <li>Zeichnen und Markieren mit dem Stift</li>
         </ul>
         <button class="big" id="btnOpen2">PDF öffnen</button>
         <div class="v" id="ver2"></div>
@@ -266,6 +272,6 @@
   <div id="toast"></div>
 
   <script src="vendor/pdf-lib.min.js"></script>
-  <script type="module" src="app.js?v=1"></script>
+  <script type="module" src="app.js?v=2"></script>
 </body>
 </html>
